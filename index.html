@@ -92,19 +92,25 @@
 
 <script>
 (function () {
-  /* Dirección de la aplicación (Apps Script → Implementar → Aplicación web). Si cambia, se cambia solo aquí. */
-  var APP = 'https://script.google.com/a/macros/jvsasesoria.com/s/AKfycbzuZeyiqA9dhQDysB7OEUa66lqr77YATlTWrFVcyqfSb060IlF7zhjaVkFd6Hydbnoixg/exec';
+  /* Direcciones de la aplicación (Apps Script → Implementar → Aplicación web).
+     MARCO: la que se abre dentro de esta página (dirección general, no exige cuenta del dominio).
+     DIRECTO: la que se abre en pantalla completa cuando el teléfono no deja abrirla dentro. */
+  var MARCO   = 'https://script.google.com/macros/s/AKfycbzuZeyiqA9dhQDysB7OEUa66lqr77YATlTWrFVcyqfSb060IlF7zhjaVkFd6Hydbnoixg/exec';
+  var DIRECTO = 'https://script.google.com/a/macros/jvsasesoria.com/s/AKfycbzuZeyiqA9dhQDysB7OEUa66lqr77YATlTWrFVcyqfSb060IlF7zhjaVkFd6Hydbnoixg/exec';
+
+  var ESPERA_MARCO = 3000;            // tiempo para confirmar que Google sí mostró la aplicación
+  var RECORDAR_DIAS = 7;              // en un equipo que no deja abrirla dentro, ir directo estos días
+  var LLAVE = 'isacars_directo';
 
   var carga = document.getElementById('carga');
   var ayuda = document.getElementById('ayuda');
   var ayudaTxt = document.getElementById('ayudaTxt');
   var directo = document.getElementById('directo');
   var inicio = Date.now();
-  var listo = false;
+  var listo = false, saliendo = false;
+  var params = location.search || '';
 
-  // Los parámetros de la dirección (si algún día se usan) pasan a la aplicación.
-  var destino = APP + (location.search || '');
-  directo.href = destino;
+  directo.href = DIRECTO + params;
 
   // Icono de la pestaña: la misma marca ISACARS.
   try {
@@ -113,21 +119,54 @@
     document.getElementById('icono').href = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   } catch (e) {}
 
+  function leer() { try { return localStorage.getItem(LLAVE); } catch (e) { return null; } }
+  function guardar(v) { try { v ? localStorage.setItem(LLAVE, v) : localStorage.removeItem(LLAVE); } catch (e) {} }
+
   function mostrarAyuda(texto) {
-    if (listo) return;
+    if (listo || saliendo) return;
     if (texto) ayudaTxt.textContent = texto;
     ayuda.hidden = false;
   }
 
   function quitarCarga() {
-    if (listo) return;
+    if (listo || saliendo) return;
     listo = true;
-    // Un momento mínimo en pantalla para que no parpadee.
-    var espera = Math.max(0, 700 - (Date.now() - inicio));
+    guardar(null);
+    var espera = Math.max(0, 700 - (Date.now() - inicio));   // que no parpadee
     setTimeout(function () {
       carga.classList.add('fuera');
       setTimeout(function () { carga.style.display = 'none'; }, 600);
     }, espera);
+  }
+
+  // Abre la aplicación en la ventana completa (sin marco). Siempre funciona.
+  function irDirecto(recordar) {
+    if (saliendo) return;
+    saliendo = true;
+    if (recordar) guardar(String(Date.now()));
+    ayuda.hidden = true;
+    var sub = document.querySelector('#carga .sub');
+    if (sub) sub.textContent = 'Abriendo el sistema…';
+    location.replace(DIRECTO + params);
+  }
+
+  /* ¿Google mostró la aplicación dentro del marco?
+     Cuando sí, la página de Google trae la aplicación en un marco interno (frames ≥ 1).
+     Cuando el teléfono bloquea las cookies de Google dentro de otra página, Google intenta
+     pedir inicio de sesión, el navegador lo bloquea y el marco queda en blanco (frames = 0). */
+  function marcosDentro(marco) {
+    try { return marco.contentWindow ? marco.contentWindow.length : 1; } catch (e) { return 1; }
+  }
+
+  function revisar(marco) {
+    if (listo || saliendo) return;
+    var desde = Date.now();
+    (function mirar() {
+      if (listo || saliendo) return;
+      if (marcosDentro(marco) > 0) { quitarCarga(); return; }
+      if (Date.now() - desde >= ESPERA_MARCO) { irDirecto(true); return; }
+      setTimeout(mirar, 250);
+    })();
   }
 
   // El marco se crea ya con su dirección: así el único «load» es el de la aplicación.
@@ -136,11 +175,16 @@
     marco.id = 'app';
     marco.title = 'ISACARS · Villa Rosa';
     marco.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
-    marco.addEventListener('load', quitarCarga);
-    marco.src = destino;
+    marco.addEventListener('load', function () { revisar(marco); });
+    marco.src = MARCO + params;
     document.body.insertBefore(marco, carga);
     setTimeout(function () { mostrarAyuda(); }, 20000);
   }
+
+  // Si en este equipo ya se vio que no deja abrirla dentro, se va directo.
+  var antes = Number(leer() || 0);
+  if (antes && Date.now() - antes < RECORDAR_DIAS * 864e5) { irDirecto(false); return; }
+  guardar(null);
 
   if (navigator.onLine === false) {
     mostrarAyuda('Sin conexión a internet. El sistema abrirá solo cuando vuelva la conexión.');
