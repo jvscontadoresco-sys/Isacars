@@ -60,6 +60,22 @@
   .ayuda a:focus-visible{outline:3px solid #B8891F;outline-offset:2px}
   @keyframes aparece{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
+
+  /* Tarjeta para entrar con Google (cuando el sistema no puede abrirse dentro de la página) */
+  .entrar{position:relative;margin-top:26px;max-width:380px;width:100%;background:#fff;border-radius:14px;
+    padding:18px 18px 16px;text-align:left;box-shadow:0 10px 30px rgba(6,77,84,.14);animation:aparece .35s ease}
+  .entrar[hidden]{display:none}
+  .entrar h2{margin:0 0 6px;font-size:15px;color:var(--isa-noche)}
+  .entrar p{margin:0 0 10px;font-size:13px;line-height:1.5;color:var(--gris)}
+  .entrar b{color:var(--tinta)}
+  .entrar .acc{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+  .entrar button,.entrar a.b{display:block;width:100%;padding:11px 14px;border-radius:9px;border:0;cursor:pointer;
+    font:bold 13px Arial,Helvetica,sans-serif;text-align:center;text-decoration:none}
+  .entrar .p{background:linear-gradient(135deg,#279191 0%,#17747B 100%);color:#fff;box-shadow:0 6px 18px rgba(6,77,84,.18)}
+  .entrar .l{background:#fff;color:var(--isa);border:1px solid #CFE3E3}
+  .entrar .n{font-size:11.5px;margin-top:10px}
+  .entrar button:focus-visible,.entrar a.b:focus-visible{outline:3px solid #B8891F;outline-offset:2px}
+
   @media (prefers-reduced-motion: reduce){
     .halo,.regla i{animation:none}
     .marca .color{animation:none;clip-path:none}
@@ -84,6 +100,15 @@
     <span id="ayudaTxt">La conexi&oacute;n est&aacute; tardando m&aacute;s de lo normal.</span><br>
     <a id="directo" href="#" target="_top" rel="noopener">Abrir directamente</a>
   </div>
+  <div class="entrar" id="entrar" hidden>
+    <h2 id="entrarTit">Confirme su cuenta de Google</h2>
+    <p id="entrarTxt">Para abrir el sistema aqu&iacute;, Google necesita saber con qu&eacute; cuenta entra (la primera vez tambi&eacute;n pide aceptar los permisos).</p>
+    <div class="acc">
+      <button class="p" id="btnGoogle" type="button">Entrar con Google</button>
+      <a class="b l" id="btnDirecto" href="#" target="_top" rel="noopener">Abrir en pantalla completa</a>
+    </div>
+    <p class="n" id="entrarNota">Use la cuenta autorizada para el sistema. Si en este navegador tiene varias cuentas de Google abiertas, lo m&aacute;s seguro es un perfil de Chrome solo para ISACARS.</p>
+  </div>
   <noscript>
     <div class="ayuda">Para usar el sistema active JavaScript o
       <a href="https://script.google.com/macros/s/AKfycbypWMoa3C_xaNy6cYQGFDnPg0LBPsscV55Ugc_YD5CS9CvtOpQVNk8WcAf3aqWZfgF7/exec">abra el sistema directamente</a>.</div>
@@ -92,25 +117,30 @@
 
 <script>
 (function () {
-  /* Direcciones de la aplicación (Apps Script → Implementar → Aplicación web).
-     MARCO: la que se abre dentro de esta página (dirección general, no exige cuenta del dominio).
-     DIRECTO: la que se abre en pantalla completa cuando el teléfono no deja abrirla dentro. */
-  var MARCO   = 'https://script.google.com/macros/s/AKfycbypWMoa3C_xaNy6cYQGFDnPg0LBPsscV55Ugc_YD5CS9CvtOpQVNk8WcAf3aqWZfgF7/exec';
-  var DIRECTO = 'https://script.google.com/a/macros/jvsasesoria.com/s/AKfycbypWMoa3C_xaNy6cYQGFDnPg0LBPsscV55Ugc_YD5CS9CvtOpQVNk8WcAf3aqWZfgF7/exec';
+  /* Dirección de la aplicación (Apps Script → Implementar → Aplicación web).
+     Implementación: «Ejecutar como: el usuario que accede» y «Acceso: cualquier
+     persona con cuenta de Google». Si se hace una implementación NUEVA, cambie
+     solo esta línea (con «Administrar implementaciones → Editar → Nueva versión»
+     la dirección no cambia y no hay que tocar nada). */
+  var APP = 'https://script.google.com/macros/s/AKfycbypWMoa3C_xaNy6cYQGFDnPg0LBPsscV55Ugc_YD5CS9CvtOpQVNk8WcAf3aqWZfgF7/exec';
 
-  var ESPERA_MARCO = 3000;            // tiempo para confirmar que Google sí mostró la aplicación
-  var RECORDAR_DIAS = 7;              // en un equipo que no deja abrirla dentro, ir directo estos días
-  var LLAVE = 'isacars_directo';
+  var ESPERA_MARCO = 4500;            // tiempo para confirmar que Google mostró la aplicación
+  var RECORDAR_DIAS = 30;             // equipo que no deja abrirla dentro: va directo estos días
+  var LLAVE = 'isacars_modo_v2';      // (llave nueva: lo recordado por versiones anteriores ya no cuenta)
 
   var carga = document.getElementById('carga');
   var ayuda = document.getElementById('ayuda');
   var ayudaTxt = document.getElementById('ayudaTxt');
-  var directo = document.getElementById('directo');
-  var inicio = Date.now();
-  var listo = false, saliendo = false;
+  var entrar = document.getElementById('entrar');
+  var sub = document.querySelector('#carga .sub');
   var params = location.search || '';
+  var DIRECTO = APP + params;
+  var inicio = Date.now();
+  var listo = false, saliendo = false, marco = null, ventana = null, reintento = null;
 
-  directo.href = DIRECTO + params;
+  document.getElementById('directo').href = DIRECTO;
+  document.getElementById('btnDirecto').href = DIRECTO;
+  try { localStorage.removeItem('isacars_directo'); } catch (e) {}   // lo que dejó la versión anterior
 
   // Icono de la pestaña: la misma marca ISACARS.
   try {
@@ -122,16 +152,11 @@
   function leer() { try { return localStorage.getItem(LLAVE); } catch (e) { return null; } }
   function guardar(v) { try { v ? localStorage.setItem(LLAVE, v) : localStorage.removeItem(LLAVE); } catch (e) {} }
 
-  function mostrarAyuda(texto) {
-    if (listo || saliendo) return;
-    if (texto) ayudaTxt.textContent = texto;
-    ayuda.hidden = false;
-  }
-
   function quitarCarga() {
     if (listo || saliendo) return;
     listo = true;
-    guardar(null);
+    if (ventana && !ventana.closed) { try { ventana.close(); } catch (e) {} }
+    clearInterval(reintento);
     var espera = Math.max(0, 700 - (Date.now() - inicio));   // que no parpadee
     setTimeout(function () {
       carga.classList.add('fuera');
@@ -143,51 +168,84 @@
   function irDirecto(recordar) {
     if (saliendo) return;
     saliendo = true;
-    if (recordar) guardar(String(Date.now()));
-    ayuda.hidden = true;
-    var sub = document.querySelector('#carga .sub');
+    if (recordar) guardar('directo:' + Date.now());
+    ayuda.hidden = true; entrar.hidden = true;
     if (sub) sub.textContent = 'Abriendo el sistema…';
-    location.replace(DIRECTO + params);
+    location.replace(DIRECTO);
   }
 
   /* ¿Google mostró la aplicación dentro del marco?
-     Cuando sí, la página de Google trae la aplicación en un marco interno (frames ≥ 1).
-     Cuando el teléfono bloquea las cookies de Google dentro de otra página, Google intenta
-     pedir inicio de sesión, el navegador lo bloquea y el marco queda en blanco (frames = 0). */
-  function marcosDentro(marco) {
-    try { return marco.contentWindow ? marco.contentWindow.length : 1; } catch (e) { return 1; }
+     Cuando sí, la página de Google trae la aplicación en un marco interno (≥ 1).
+     Cuando falta iniciar sesión, aceptar permisos o el navegador bloquea las
+     cookies de Google dentro de otra página, no hay marco interno (0). */
+  function marcosDentro() {
+    try { return marco && marco.contentWindow ? marco.contentWindow.length : 0; } catch (e) { return 1; }
   }
 
-  function revisar(marco) {
-    if (listo || saliendo) return;
+  function mirar(alFallar) {
     var desde = Date.now();
-    (function mirar() {
+    (function paso() {
       if (listo || saliendo) return;
-      if (marcosDentro(marco) > 0) { quitarCarga(); return; }
-      if (Date.now() - desde >= ESPERA_MARCO) { irDirecto(true); return; }
-      setTimeout(mirar, 250);
+      if (marcosDentro() > 0) { quitarCarga(); return; }
+      if (Date.now() - desde >= ESPERA_MARCO) { alFallar(); return; }
+      setTimeout(paso, 250);
     })();
   }
 
-  // El marco se crea ya con su dirección: así el único «load» es el de la aplicación.
-  function abrir() {
-    var marco = document.createElement('iframe');
-    marco.id = 'app';
-    marco.title = 'ISACARS · Villa Rosa';
-    marco.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen');
-    marco.addEventListener('load', function () { revisar(marco); });
-    marco.src = MARCO + params;
-    document.body.insertBefore(marco, carga);
-    setTimeout(function () { mostrarAyuda(); }, 20000);
+  function cargarMarco(alFallar) {
+    if (!marco) {
+      marco = document.createElement('iframe');
+      marco.id = 'app';
+      marco.title = 'ISACARS · Villa Rosa';
+      marco.setAttribute('allow', 'clipboard-read; clipboard-write; fullscreen; camera');
+      document.body.insertBefore(marco, carga);
+    }
+    marco.onload = function () { mirar(alFallar); };
+    marco.src = APP + params + (params ? '&' : '?') + '_=' + Date.now();
   }
 
-  // Si en este equipo ya se vio que no deja abrirla dentro, se va directo.
-  var antes = Number(leer() || 0);
-  if (antes && Date.now() - antes < RECORDAR_DIAS * 864e5) { irDirecto(false); return; }
-  guardar(null);
+  // Google necesita la cuenta (o permisos): se ofrece entrar sin salir de esta página
+  function pedirCuenta() {
+    if (listo || saliendo) return;
+    ayuda.hidden = true;
+    entrar.hidden = false;
+    if (sub) sub.textContent = 'Villa Rosa · Gestión de lotes';
+  }
+
+  document.getElementById('btnGoogle').onclick = function () {
+    // ventana de Google para elegir la cuenta y aceptar permisos
+    try { ventana = window.open(APP + params, 'isacars_google', 'width=520,height=700'); } catch (e) { ventana = null; }
+    if (!ventana) { irDirecto(false); return; }          // el navegador bloqueó la ventana
+    document.getElementById('entrarTit').textContent = 'Termine en la ventana de Google';
+    document.getElementById('entrarTxt').innerHTML = 'Elija la cuenta y acepte. Cuando el sistema aparezca en esa ventana, <b>esta página lo abre sola</b> y la cierra.';
+    document.getElementById('btnGoogle').textContent = 'Volver a abrir la ventana de Google';
+    var intentos = 0;
+    clearInterval(reintento);
+    reintento = setInterval(function () {
+      if (listo || saliendo) { clearInterval(reintento); return; }
+      intentos++;
+      var cerrada = !ventana || ventana.closed;
+      cargarMarco(function () {
+        // ya con la cuenta confirmada y aún no se ve aquí: este navegador
+        // bloquea a Google dentro de otra página → se abre directo
+        if (cerrada || intentos > 40) { clearInterval(reintento); irDirecto(true); }
+      });
+    }, 5000);
+  };
+
+  // Equipo que ya se sabe que no deja abrirla dentro: directo
+  var antes = String(leer() || '');
+  var cuando = Number(antes.split(':')[1] || 0);
+  if (antes.indexOf('directo:') === 0 && Date.now() - cuando < RECORDAR_DIAS * 864e5) { irDirecto(false); return; }
+
+  function abrir() {
+    cargarMarco(pedirCuenta);
+    setTimeout(function () { if (!listo && !saliendo && entrar.hidden) { ayuda.hidden = false; } }, 20000);
+  }
 
   if (navigator.onLine === false) {
-    mostrarAyuda('Sin conexión a internet. El sistema abrirá solo cuando vuelva la conexión.');
+    ayudaTxt.textContent = 'Sin conexión a internet. El sistema abrirá solo cuando vuelva la conexión.';
+    ayuda.hidden = false;
     window.addEventListener('online', function vuelve() {
       window.removeEventListener('online', vuelve);
       ayuda.hidden = true;
